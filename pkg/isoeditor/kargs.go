@@ -114,7 +114,6 @@ func kargsEmbedAreaBoundariesFinder(isoPath, filePath string, fileBoundariesFind
 
 	// ABI FIPS ISO Debug
 	fmt.Println("Debug: filePath", filePath)
-	fmt.Println("Debug: Reader Bytes", b)
 	re := regexp.MustCompile(`(\n#*)# COREOS_KARG_EMBED_AREA`)
 	fmt.Println("Debug: Regex check for CoreOS", re)
 	submatchIndexes := re.FindSubmatchIndex(b)
