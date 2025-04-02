@@ -102,7 +102,7 @@ func NewKargsReader(isoPath string, appendKargs string) ([]FileData, error) {
 }
 
 func kargsEmbedAreaBoundariesFinder(isoPath, filePath string, fileBoundariesFinder BoundariesFinder, fileReader FileReader) (int64, int64, error) {
-	start, _, err := fileBoundariesFinder(filePath, isoPath)
+	start, end, err := fileBoundariesFinder(filePath, isoPath)
 	if err != nil {
 		return 0, 0, err
 	}
@@ -113,15 +113,19 @@ func kargsEmbedAreaBoundariesFinder(isoPath, filePath string, fileBoundariesFind
 	}
 
 	// ABI FIPS ISO Debug
-	fmt.Println("Debug: filePath", filePath)
-	re := regexp.MustCompile(`(\n#*)# COREOS_KARG_EMBED_AREA`)
-	fmt.Println("Debug: Regex check for CoreOS", re)
-	submatchIndexes := re.FindSubmatchIndex(b)
-	fmt.Println("Debug: CoreOS SubMatchIndex Length", len(submatchIndexes))
-	if len(submatchIndexes) != 4 {
-		return 0, 0, errors.New("failed to find COREOS_KARG_EMBED_AREA")
+	cpuArch := "s390x"
+	if cpuArch != "s390x" {
+		re := regexp.MustCompile(`(\n#*)# COREOS_KARG_EMBED_AREA`)
+		submatchIndexes := re.FindSubmatchIndex(b)
+		if len(submatchIndexes) != 4 {
+			return 0, 0, errors.New("failed to find COREOS_KARG_EMBED_AREA")
+		}
+		start += int64(submatchIndexes[2])
+		end += int64(submatchIndexes[3] - submatchIndexes[2])
+	} else {
+		fmt.Println("CPU Arch is s390x so ignoring the COREOS_KARG_EMBED_AREA")
 	}
-	return start + int64(submatchIndexes[2]), int64(submatchIndexes[3] - submatchIndexes[2]), nil
+	return start, end, nil
 }
 
 func createKargsEmbedAreaBoundariesFinder() BoundariesFinder {
