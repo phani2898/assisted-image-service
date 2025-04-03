@@ -6,8 +6,12 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"io/ioutil"
 	"os"
 	"regexp"
+	"strings"
+	"unicode"
+	"unicode/utf8"
 
 	"github.com/openshift/assisted-image-service/pkg/overlay"
 )
@@ -48,25 +52,88 @@ func KargsFiles(isoPath string) ([]string, error) {
 	return kargsFiles(isoPath, ReadFileFromISO)
 }
 
+func appendS390xKargs(filePath string, appendKargs []byte) (FileData, error) {
+
+	fileData := FileData{}
+
+	if strings.HasSuffix(filePath, "prm") {
+
+		// Open file in append mode
+		file, err := os.OpenFile(filePath, os.O_APPEND|os.O_WRONLY, 0644)
+		if err != nil {
+			return FileData{}, err
+		}
+		defer file.Close()
+
+		// Write the kargs at the end
+		if _, err := file.Write(appendKargs); err != nil {
+			return FileData{}, err
+		}
+
+		fileData = FileData{filePath, file}
+	}
+
+	return fileData, nil
+}
+
 func kargsFileData(isoPath string, file string, appendKargs []byte) (FileData, error) {
 	baseISO, err := os.Open(isoPath)
 	if err != nil {
 		return FileData{}, err
 	}
 
-	iso, err := readerForKargsContent(isoPath, file, baseISO, bytes.NewReader(appendKargs))
-	if err != nil {
-		baseISO.Close()
-		return FileData{}, err
-	}
+	fileData := FileData{}
+	if strings.Contains(isoPath, "s390x") {
+		fileData, err = appendS390xKargs(file, appendKargs)
+		if err != nil {
+			baseISO.Close()
+			return FileData{}, err
+		}
+	} else {
+		iso, err := readerForKargsContent(isoPath, file, baseISO, bytes.NewReader(appendKargs))
+		if err != nil {
+			baseISO.Close()
+			return FileData{}, err
+		}
 
-	fileData, _, err := isolateISOFile(isoPath, file, iso, 0)
-	if err != nil {
-		iso.Close()
-		return FileData{}, err
+		fileData, _, err = isolateISOFile(isoPath, file, iso, 0)
+		if err != nil {
+			iso.Close()
+			return FileData{}, err
+		}
 	}
 
 	return fileData, nil
+}
+
+// s390x ABI ISO FIPS Debug
+func printFileData(fd FileData) error {
+	fmt.Printf("Filename: %s\n", fd.Filename)
+
+	// Read all data from the ReadCloser
+	data, err := io.ReadAll(fd.Data)
+	if err != nil {
+		return fmt.Errorf("failed to read data: %v", err)
+	}
+
+	// Print content (as string if text, or hex if binary)
+	if isText(data) {
+		fmt.Printf("Content:\n%s\n", string(data))
+	} else {
+		fmt.Printf("Binary data (%d bytes):\n%x\n", len(data), data)
+	}
+
+	// Replace the consumed ReadCloser with a new one (if needed later)
+	fd.Data = io.NopCloser(bytes.NewReader(data))
+
+	return nil
+}
+
+// Helper to check if data is likely text
+func isText(data []byte) bool {
+	return utf8.Valid(data) && len(bytes.TrimFunc(data, func(r rune) bool {
+		return r == '\n' || r == '\t' || unicode.IsSpace(r) || unicode.IsPrint(r)
+	})) > 0
 }
 
 // NewKargsReader returns the filename within an ISO and the new content of
@@ -89,6 +156,9 @@ func NewKargsReader(isoPath string, appendKargs string) ([]FileData, error) {
 	output := []FileData{}
 	for i, f := range files {
 		data, err := kargsFileData(isoPath, f, appendData)
+		if err := printFileData(data); err != nil {
+			fmt.Println(err)
+		}
 		if err != nil {
 			for _, fd := range output[:i] {
 				fd.Data.Close()
@@ -102,7 +172,9 @@ func NewKargsReader(isoPath string, appendKargs string) ([]FileData, error) {
 }
 
 func kargsEmbedAreaBoundariesFinder(isoPath, filePath string, fileBoundariesFinder BoundariesFinder, fileReader FileReader) (int64, int64, error) {
-	start, end, err := fileBoundariesFinder(filePath, isoPath)
+	start, _, err := fileBoundariesFinder(filePath, isoPath)
+	fmt.Println("File Path Phani: ", filePath)
+	fmt.Println("start of file Phani:", start)
 	if err != nil {
 		return 0, 0, err
 	}
@@ -112,20 +184,13 @@ func kargsEmbedAreaBoundariesFinder(isoPath, filePath string, fileBoundariesFind
 		return 0, 0, err
 	}
 
-	// ABI FIPS ISO Debug
-	cpuArch := "s390x"
-	if cpuArch != "s390x" {
-		re := regexp.MustCompile(`(\n#*)# COREOS_KARG_EMBED_AREA`)
-		submatchIndexes := re.FindSubmatchIndex(b)
-		if len(submatchIndexes) != 4 {
-			return 0, 0, errors.New("failed to find COREOS_KARG_EMBED_AREA")
-		}
-		start += int64(submatchIndexes[2])
-		end += int64(submatchIndexes[3] - submatchIndexes[2])
-	} else {
-		fmt.Println("CPU Arch is s390x so ignoring the COREOS_KARG_EMBED_AREA")
+	re := regexp.MustCompile(`(\n#*)# COREOS_KARG_EMBED_AREA`)
+	submatchIndexes := re.FindSubmatchIndex(b)
+	fmt.Println("Length of submatch indices:", len(submatchIndexes))
+	if len(submatchIndexes) != 4 {
+		return 0, 0, errors.New("failed to find COREOS_KARG_EMBED_AREA")
 	}
-	return start, end, nil
+	return start + int64(submatchIndexes[2]), int64(submatchIndexes[3] - submatchIndexes[2]), nil
 }
 
 func createKargsEmbedAreaBoundariesFinder() BoundariesFinder {
