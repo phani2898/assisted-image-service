@@ -5,14 +5,11 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"github.com/openshift/assisted-image-service/pkg/overlay"
 	"io"
 	"os"
 	"regexp"
 	"strings"
-	"unicode"
-	"unicode/utf8"
-
-	"github.com/openshift/assisted-image-service/pkg/overlay"
 )
 
 const (
