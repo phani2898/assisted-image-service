@@ -105,36 +105,6 @@ func kargsFileData(isoPath string, file string, appendKargs []byte) (FileData, e
 	return fileData, nil
 }
 
-// s390x ABI ISO FIPS Debug
-func printFileData(fd FileData) error {
-	fmt.Printf("Filename: %s\n", fd.Filename)
-
-	// Read all data from the ReadCloser
-	data, err := io.ReadAll(fd.Data)
-	if err != nil {
-		return fmt.Errorf("failed to read data: %v", err)
-	}
-
-	// Print content (as string if text, or hex if binary)
-	if isText(data) {
-		fmt.Printf("Content:\n%s\n", string(data))
-	} else {
-		fmt.Printf("Binary data (%d bytes):\n%x\n", len(data), data)
-	}
-
-	// Replace the consumed ReadCloser with a new one (if needed later)
-	fd.Data = io.NopCloser(bytes.NewReader(data))
-
-	return nil
-}
-
-// Helper to check if data is likely text
-func isText(data []byte) bool {
-	return utf8.Valid(data) && len(bytes.TrimFunc(data, func(r rune) bool {
-		return r == '\n' || r == '\t' || unicode.IsSpace(r) || unicode.IsPrint(r)
-	})) > 0
-}
-
 // NewKargsReader returns the filename within an ISO and the new content of
 // the file(s) containing the kernel arguments, with additional arguments
 // appended.
@@ -155,9 +125,6 @@ func NewKargsReader(isoPath string, appendKargs string) ([]FileData, error) {
 	output := []FileData{}
 	for i, f := range files {
 		data, err := kargsFileData(isoPath, f, appendData)
-		if err := printFileData(data); err != nil {
-			fmt.Println(err)
-		}
 		if err != nil {
 			for _, fd := range output[:i] {
 				fd.Data.Close()
