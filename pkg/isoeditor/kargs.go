@@ -48,28 +48,60 @@ func KargsFiles(isoPath string) ([]string, error) {
 	return kargsFiles(isoPath, ReadFileFromISO)
 }
 
-func appendS390xKargs(filePath string, appendKargs []byte) (FileData, error) {
-
-	fileData := FileData{}
-
-	if strings.HasSuffix(filePath, "prm") {
-
-		// Open file in append mode
-		file, err := os.OpenFile(filePath, os.O_APPEND|os.O_WRONLY, 0644)
-		if err != nil {
-			return FileData{}, err
+func appendS390xKargs(isoPath string, filePath string, appendKargs []byte) (FileData, error) {
+	fmt.Printf("Phani - Reading file %s from the ISO %s", filePath, isoPath)
+	kargsData, err := ReadFileFromISO(isoPath, kargsConfigFilePath)
+	if err != nil {
+		return FileData{}, nil
+	}
+	var kargsConfig struct {
+		Files []struct {
+			Path   *string
+			Offset *int64
 		}
-		defer file.Close()
-
-		// Write the kargs at the end
-		if _, err := file.Write(appendKargs); err != nil {
-			return FileData{}, err
+	}
+	if err := json.Unmarshal(kargsData, &kargsConfig); err != nil {
+		return FileData{}, err
+	}
+	fmt.Printf("Phani - Printing the kargsConfig data", kargsConfig)
+	var fileOffset int64
+	for _, file := range kargsConfig.Files {
+		if file.Path == &filePath {
+			fileOffset = *file.Offset
 		}
+	}
+	fmt.Printf("Phani - Printing the file Offset data", fileOffset)
 
-		fileData = FileData{filePath, file}
+	fmt.Printf("Phani - Opening the file %s", filePath)
+	// Open file in append mode
+	file, err := os.OpenFile(filePath, os.O_APPEND|os.O_WRONLY, 0644)
+	if err != nil {
+		file.Close()
+		return FileData{}, err
 	}
 
-	return fileData, nil
+	fmt.Printf("Phani - Seeking the file %s to offset %d", filePath, fileOffset)
+	// Seeking the file to a particular offset found in the kargs.json
+	if _, err = file.Seek(fileOffset, io.SeekStart); err != nil {
+		file.Close()
+		return FileData{}, err
+	}
+
+	fmt.Printf("Phani - Appending the kargs to file %s at offset %d", filePath, fileOffset)
+	// Write the kargs at the end
+	if _, err := file.Write(appendKargs); err != nil {
+		file.Close()
+		return FileData{}, err
+	}
+
+	fmt.Printf("Phani - Seeking the file %s to the start", filePath)
+	// Seeking back the file pointer to the start
+	if _, err = file.Seek(0, io.SeekStart); err != nil {
+		file.Close()
+		return FileData{}, err
+	}
+
+	return FileData{filePath, file}, nil
 }
 
 func kargsFileData(isoPath string, file string, appendKargs []byte) (FileData, error) {
@@ -77,26 +109,22 @@ func kargsFileData(isoPath string, file string, appendKargs []byte) (FileData, e
 	if err != nil {
 		return FileData{}, err
 	}
+	defer baseISO.Close()
 
-	fileData := FileData{}
 	if strings.Contains(isoPath, "s390x") {
-		fileData, err = appendS390xKargs(file, appendKargs)
-		if err != nil {
-			baseISO.Close()
-			return FileData{}, err
-		}
-	} else {
-		iso, err := readerForKargsContent(isoPath, file, baseISO, bytes.NewReader(appendKargs))
-		if err != nil {
-			baseISO.Close()
-			return FileData{}, err
-		}
+		fmt.Println("Executing the s390x scenario Phani")
+		return appendS390xKargs(isoPath, file, appendKargs)
+	}
 
-		fileData, _, err = isolateISOFile(isoPath, file, iso, 0)
-		if err != nil {
-			iso.Close()
-			return FileData{}, err
-		}
+	iso, err := readerForKargsContent(isoPath, file, baseISO, bytes.NewReader(appendKargs))
+	if err != nil {
+		return FileData{}, err
+	}
+	defer iso.Close()
+
+	fileData, _, err := isolateISOFile(isoPath, file, iso, 0)
+	if err != nil {
+		return FileData{}, err
 	}
 
 	return fileData, nil
@@ -136,8 +164,6 @@ func NewKargsReader(isoPath string, appendKargs string) ([]FileData, error) {
 
 func kargsEmbedAreaBoundariesFinder(isoPath, filePath string, fileBoundariesFinder BoundariesFinder, fileReader FileReader) (int64, int64, error) {
 	start, _, err := fileBoundariesFinder(filePath, isoPath)
-	fmt.Println("File Path Phani: ", filePath)
-	fmt.Println("start of file Phani:", start)
 	if err != nil {
 		return 0, 0, err
 	}
@@ -149,7 +175,6 @@ func kargsEmbedAreaBoundariesFinder(isoPath, filePath string, fileBoundariesFind
 
 	re := regexp.MustCompile(`(\n#*)# COREOS_KARG_EMBED_AREA`)
 	submatchIndexes := re.FindSubmatchIndex(b)
-	fmt.Println("Length of submatch indices:", len(submatchIndexes))
 	if len(submatchIndexes) != 4 {
 		return 0, 0, errors.New("failed to find COREOS_KARG_EMBED_AREA")
 	}
