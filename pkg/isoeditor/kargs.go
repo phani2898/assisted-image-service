@@ -8,6 +8,7 @@ import (
 	"github.com/openshift/assisted-image-service/pkg/overlay"
 	"io"
 	"os"
+	"path/filepath"
 	"regexp"
 	"strings"
 )
@@ -77,37 +78,39 @@ func appendS390xKargs(isoPath string, filePath string, appendKargs []byte) (File
 	}
 	fmt.Printf("Phani - Printing the kargs Offset data", kargsOffset)
 
-	// Getting the file from ISO
-	fmt.Printf("Phani - Getting the file from ISO", kargsOffset)
-	file, err := GetFileFromISO(isoPath, filePath)
+	// Creating a temporary directory for extracting ISO
+	isoTempDir, err := os.MkdirTemp("", "coreos-s390x-iso-")
 	if err != nil {
-		file.Close()
+		return FileData{}, fmt.Errorf("failed to create temp dir: %w", err)
+	}
+	defer os.RemoveAll(isoTempDir) // Clean up when done
+	fmt.Printf("Phani - Extracting the file from ISO")
+	err = Extract(isoPath, isoTempDir)
+	if err != nil {
 		return FileData{}, err
 	}
+	absoluteFilePath := filepath.Join(isoTempDir, filePath)
 
-	fmt.Printf("Phani - Opening the file %s", filePath)
+	fmt.Printf("Phani - Opening the file %s", absoluteFilePath)
 	// Open file in append mode
-	file, err = os.OpenFile(filePath, os.O_APPEND|os.O_WRONLY, 0644)
+	file, err := os.OpenFile(absoluteFilePath, os.O_APPEND|os.O_WRONLY, 0644)
 	if err != nil {
 		file.Close()
 		return FileData{}, err
 	}
-
-	fmt.Printf("Phani - Seeking the file %s to offset %d", filePath, kargsOffset)
+	fmt.Printf("Phani - Seeking the file %s to offset %d", absoluteFilePath, kargsOffset)
 	// Seeking the file to a particular offset found in the kargs.json
 	if _, err = file.Seek(kargsOffset, io.SeekStart); err != nil {
 		file.Close()
 		return FileData{}, err
 	}
-
-	fmt.Printf("Phani - Appending the kargs to file %s at offset %d", filePath, kargsOffset)
+	fmt.Printf("Phani - Appending the kargs to file %s at offset %d", absoluteFilePath, kargsOffset)
 	// Write the kargs at the end
 	if _, err := file.Write(appendKargs); err != nil {
 		file.Close()
 		return FileData{}, err
 	}
-
-	fmt.Printf("Phani - Seeking the file %s to the start", filePath)
+	fmt.Printf("Phani - Seeking the file %s to the start", absoluteFilePath)
 	// Seeking back the file pointer to the start
 	if _, err = file.Seek(0, io.SeekStart); err != nil {
 		file.Close()
