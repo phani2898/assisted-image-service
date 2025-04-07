@@ -55,39 +55,48 @@ func appendS390xKargs(isoPath string, filePath string, appendKargs []byte) (File
 		return FileData{}, nil
 	}
 	var kargsConfig struct {
-		Files []struct {
-			Path   *string
-			Offset *int64
-		}
+		Default string `json:"default"`
+		Files   []struct {
+			Path   string `json:"path"`
+			Offset int64  `json:"offset"`
+			End    string `json:"end"`
+			Pad    string `json:"pad"`
+		} `json:"files"`
+		Size int `json:"size"`
 	}
 	if err := json.Unmarshal(kargsData, &kargsConfig); err != nil {
 		return FileData{}, err
 	}
 	fmt.Printf("Phani - Printing the kargsConfig data", kargsConfig)
-	var fileOffset int64
+
+	var kargsOffset int64
 	for _, file := range kargsConfig.Files {
-		if file.Path == &filePath {
-			fileOffset = *file.Offset
+		if file.Path == filePath {
+			kargsOffset = file.Offset
 		}
 	}
-	fmt.Printf("Phani - Printing the file Offset data", fileOffset)
+	fmt.Printf("Phani - Printing the kargs Offset data", kargsOffset)
+
+	// Getting the file from ISO
+	fmt.Printf("Phani - Getting the file from ISO", kargsOffset)
+	file, err := GetFileFromISO(isoPath, filePath)
 
 	fmt.Printf("Phani - Opening the file %s", filePath)
 	// Open file in append mode
-	file, err := os.OpenFile(filePath, os.O_APPEND|os.O_WRONLY, 0644)
+	file, err = os.OpenFile(filePath, os.O_APPEND|os.O_WRONLY, 0644)
 	if err != nil {
 		file.Close()
 		return FileData{}, err
 	}
 
-	fmt.Printf("Phani - Seeking the file %s to offset %d", filePath, fileOffset)
+	fmt.Printf("Phani - Seeking the file %s to offset %d", filePath, kargsOffset)
 	// Seeking the file to a particular offset found in the kargs.json
-	if _, err = file.Seek(fileOffset, io.SeekStart); err != nil {
+	if _, err = file.Seek(kargsOffset, io.SeekStart); err != nil {
 		file.Close()
 		return FileData{}, err
 	}
 
-	fmt.Printf("Phani - Appending the kargs to file %s at offset %d", filePath, fileOffset)
+	fmt.Printf("Phani - Appending the kargs to file %s at offset %d", filePath, kargsOffset)
 	// Write the kargs at the end
 	if _, err := file.Write(appendKargs); err != nil {
 		file.Close()
