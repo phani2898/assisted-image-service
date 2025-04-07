@@ -80,6 +80,10 @@ func appendS390xKargs(isoPath string, filePath string, appendKargs []byte) (File
 	// Getting the file from ISO
 	fmt.Printf("Phani - Getting the file from ISO", kargsOffset)
 	file, err := GetFileFromISO(isoPath, filePath)
+	if err != nil {
+		file.Close()
+		return FileData{}, err
+	}
 
 	fmt.Printf("Phani - Opening the file %s", filePath)
 	// Open file in append mode
