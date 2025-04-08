@@ -100,7 +100,7 @@ func appendS390xKargs(isoPath string, filePath string, appendKargs []byte) (File
 	}()
 
 	// Extract ISO
-	fmt.Printf("Extracting ISO to %s\n", isoTempDir)
+	fmt.Printf("Phani - Extracting ISO to %s\n", isoTempDir)
 	if err := Extract(isoPath, isoTempDir); err != nil {
 		return FileData{}, fmt.Errorf("Phani - failed to extract ISO: %w", err)
 	}
@@ -126,7 +126,9 @@ func appendS390xKargs(isoPath string, filePath string, appendKargs []byte) (File
 	if err != nil {
 		return FileData{}, fmt.Errorf("failed to read file %s: %w", filePath, err)
 	}
+	fmt.Printf("Phani - Printing the existing kargs %s\n", string(fileData[kargsOffset:]))
 	finalKargs := append(fileData[kargsOffset:], appendKargs...)
+	fmt.Printf("Phani - Appended Kargs %s\n", string(finalKargs))
 
 	fmt.Printf("Phani - Seeking to offset %d\n", kargsOffset)
 	if _, err = file.Seek(kargsOffset, io.SeekStart); err != nil {
@@ -159,7 +161,7 @@ func kargsFileData(isoPath string, file string, appendKargs []byte) (FileData, e
 	defer baseISO.Close()
 
 	if strings.Contains(isoPath, "s390x") {
-		fmt.Println("Executing the s390x scenario Phani")
+		fmt.Println("Phani - Executing the s390x scenario")
 		return appendS390xKargs(isoPath, file, appendKargs)
 	}
 
