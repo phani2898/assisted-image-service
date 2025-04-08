@@ -141,7 +141,7 @@ func appendS390xKargs(isoPath string, filePath string, appendKargs []byte) (File
 		return FileData{}, fmt.Errorf("seek to start failed: %w", err)
 	}
 
-	return FileData{absoluteFilePath, file}, nil
+	return FileData{filePath, file}, nil
 }
 
 func kargsFileData(isoPath string, file string, appendKargs []byte) (FileData, error) {
