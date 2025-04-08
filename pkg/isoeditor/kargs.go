@@ -73,7 +73,7 @@ func appendS390xKargs(isoPath string, filePath string, appendKargs []byte) (File
 	}
 	fmt.Printf("Phani - Kargs config: %+v\n", kargsConfig)
 
-	// Find offset for our target file
+	// Finding offset for the target filePath
 	var kargsOffset int64
 	var found bool
 	for _, file := range kargsConfig.Files {
@@ -121,13 +121,20 @@ func appendS390xKargs(isoPath string, filePath string, appendKargs []byte) (File
 		}
 	}()
 
+	fmt.Printf("Phani - Reading existing kargs from offset %d\n", kargsOffset)
+	fileData, err := ReadFileFromISO(isoPath, filePath)
+	if err != nil {
+		return FileData{}, fmt.Errorf("failed to read file %s: %w", filePath, err)
+	}
+	finalKargs := append(fileData[kargsOffset:], appendKargs...)
+
 	fmt.Printf("Phani - Seeking to offset %d\n", kargsOffset)
 	if _, err = file.Seek(kargsOffset, io.SeekStart); err != nil {
 		return FileData{}, fmt.Errorf("seek failed: %w", err)
 	}
 
-	fmt.Printf("Phani - Appending %d bytes of kargs\n", len(appendKargs))
-	if _, err := file.Write(appendKargs); err != nil {
+	fmt.Printf("Phani - Appending %d bytes of kargs\n", len(finalKargs))
+	if _, err := file.Write(finalKargs); err != nil {
 		return FileData{}, fmt.Errorf("write failed: %w", err)
 	}
 
