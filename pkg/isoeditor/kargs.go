@@ -50,11 +50,13 @@ func KargsFiles(isoPath string) ([]string, error) {
 }
 
 func appendS390xKargs(isoPath string, filePath string, appendKargs []byte) (FileData, error) {
-	fmt.Printf("Phani - Reading file %s from the ISO %s", filePath, isoPath)
+	fmt.Printf("Phani - Reading file %s from ISO %s\n", filePath, isoPath)
+
 	kargsData, err := ReadFileFromISO(isoPath, kargsConfigFilePath)
 	if err != nil {
-		return FileData{}, nil
+		return FileData{}, fmt.Errorf("failed to read kargs config: %w", err)
 	}
+
 	var kargsConfig struct {
 		Default string `json:"default"`
 		Files   []struct {
@@ -65,59 +67,81 @@ func appendS390xKargs(isoPath string, filePath string, appendKargs []byte) (File
 		} `json:"files"`
 		Size int `json:"size"`
 	}
-	if err := json.Unmarshal(kargsData, &kargsConfig); err != nil {
-		return FileData{}, err
-	}
-	fmt.Printf("Phani - Printing the kargsConfig data", kargsConfig)
 
+	if err := json.Unmarshal(kargsData, &kargsConfig); err != nil {
+		return FileData{}, fmt.Errorf("failed to unmarshal kargs config: %w", err)
+	}
+	fmt.Printf("Phani - Kargs config: %+v\n", kargsConfig)
+
+	// Find offset for our target file
 	var kargsOffset int64
+	var found bool
 	for _, file := range kargsConfig.Files {
 		if file.Path == filePath {
 			kargsOffset = file.Offset
+			found = true
+			break
 		}
 	}
-	fmt.Printf("Phani - Printing the kargs Offset data", kargsOffset)
+	if !found {
+		return FileData{}, fmt.Errorf("file %s not found in kargs config", filePath)
+	}
+	fmt.Printf("Phani - Found offset %d for file %s\n", kargsOffset, filePath)
 
-	// Creating a temporary directory for extracting ISO
+	// Create temp directory
 	isoTempDir, err := os.MkdirTemp("", "coreos-s390x-iso-")
 	if err != nil {
 		return FileData{}, fmt.Errorf("failed to create temp dir: %w", err)
 	}
-	defer os.RemoveAll(isoTempDir) // Clean up when done
-	fmt.Printf("Phani - Extracting the file from ISO")
-	err = Extract(isoPath, isoTempDir)
-	if err != nil {
-		return FileData{}, err
+	defer func() {
+		if err := os.RemoveAll(isoTempDir); err != nil {
+			fmt.Printf("Phani - Warning: failed to clean up temp dir %s: %v\n", isoTempDir, err)
+		}
+	}()
+
+	// Extract ISO
+	fmt.Printf("Extracting ISO to %s\n", isoTempDir)
+	if err := Extract(isoPath, isoTempDir); err != nil {
+		return FileData{}, fmt.Errorf("Phani - failed to extract ISO: %w", err)
 	}
+
 	absoluteFilePath := filepath.Join(isoTempDir, filePath)
+	fmt.Printf("Phani - Opening the file %s for modification\n", absoluteFilePath)
 
-	fmt.Printf("Phani - Opening the file %s", absoluteFilePath)
-	// Open file in append mode
-	file, err := os.OpenFile(absoluteFilePath, os.O_APPEND|os.O_WRONLY, 0644)
+	// Open file in read-write mode (without O_APPEND)
+	file, err := os.OpenFile(absoluteFilePath, os.O_RDWR, 0644)
 	if err != nil {
-		file.Close()
-		return FileData{}, err
-	}
-	fmt.Printf("Phani - Seeking the file %s to offset %d", absoluteFilePath, kargsOffset)
-	// Seeking the file to a particular offset found in the kargs.json
-	if _, err = file.Seek(kargsOffset, io.SeekStart); err != nil {
-		file.Close()
-		return FileData{}, err
-	}
-	fmt.Printf("Phani - Appending the kargs to file %s at offset %d", absoluteFilePath, kargsOffset)
-	// Write the kargs at the end
-	if _, err := file.Write(appendKargs); err != nil {
-		file.Close()
-		return FileData{}, err
-	}
-	fmt.Printf("Phani - Seeking the file %s to the start", absoluteFilePath)
-	// Seeking back the file pointer to the start
-	if _, err = file.Seek(0, io.SeekStart); err != nil {
-		file.Close()
-		return FileData{}, err
+		return FileData{}, fmt.Errorf("failed to open file: %w", err)
 	}
 
-	return FileData{filePath, file}, nil
+	// Ensure file is closed if we exit early
+	defer func() {
+		if err != nil {
+			file.Close()
+		}
+	}()
+
+	fmt.Printf("Phani - Seeking to offset %d\n", kargsOffset)
+	if _, err = file.Seek(kargsOffset, io.SeekStart); err != nil {
+		return FileData{}, fmt.Errorf("seek failed: %w", err)
+	}
+
+	fmt.Printf("Phani - Appending %d bytes of kargs\n", len(appendKargs))
+	if _, err := file.Write(appendKargs); err != nil {
+		return FileData{}, fmt.Errorf("write failed: %w", err)
+	}
+
+	// Sync changes to disk
+	if err := file.Sync(); err != nil {
+		return FileData{}, fmt.Errorf("sync failed: %w", err)
+	}
+
+	fmt.Printf("Phani - Seeking back to start\n")
+	if _, err = file.Seek(0, io.SeekStart); err != nil {
+		return FileData{}, fmt.Errorf("seek to start failed: %w", err)
+	}
+
+	return FileData{absoluteFilePath, file}, nil
 }
 
 func kargsFileData(isoPath string, file string, appendKargs []byte) (FileData, error) {
