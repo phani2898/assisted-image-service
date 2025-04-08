@@ -108,34 +108,34 @@ func appendS390xKargs(isoPath string, filePath string, appendKargs []byte) (File
 	absoluteFilePath := filepath.Join(isoTempDir, filePath)
 	fmt.Printf("Phani - Opening the file %s for modification\n", absoluteFilePath)
 
-	// Open file in read-write mode (without O_APPEND)
+	// Open file in read-write mode
 	file, err := os.OpenFile(absoluteFilePath, os.O_RDWR, 0644)
 	if err != nil {
 		return FileData{}, fmt.Errorf("failed to open file: %w", err)
 	}
+	defer file.Close()
 
-	// Ensure file is closed if we exit early
-	defer func() {
-		if err != nil {
-			file.Close()
-		}
-	}()
-
-	fmt.Printf("Phani - Reading existing kargs from offset %d\n", kargsOffset)
-	fileData, err := ReadFileFromISO(isoPath, filePath)
-	if err != nil {
-		return FileData{}, fmt.Errorf("failed to read file %s: %w", filePath, err)
-	}
-	fmt.Printf("Phani - Printing the existing kargs %s\n", string(fileData[kargsOffset:]))
-	finalKargs := append(fileData[kargsOffset:], appendKargs...)
-	fmt.Printf("Phani - Appended Kargs %s\n", string(finalKargs))
-
-	fmt.Printf("Phani - Seeking to offset %d\n", kargsOffset)
+	// Read existing content from the offset position
 	if _, err = file.Seek(kargsOffset, io.SeekStart); err != nil {
-		return FileData{}, fmt.Errorf("seek failed: %w", err)
+		return FileData{}, fmt.Errorf("seek to offset failed: %w", err)
 	}
 
-	fmt.Printf("Phani - Appending %d bytes of kargs\n", len(finalKargs))
+	existingKargs, err := io.ReadAll(file)
+	if err != nil {
+		return FileData{}, fmt.Errorf("failed to read existing kargs: %w", err)
+	}
+	fmt.Printf("Phani - Existing kargs: %s\n", string(existingKargs))
+
+	// Combine existing and new kargs
+	finalKargs := append(existingKargs, appendKargs...)
+	fmt.Printf("Phani - Combined kargs: %s\n", string(finalKargs))
+
+	// Seek back to the offset position to write
+	if _, err = file.Seek(kargsOffset, io.SeekStart); err != nil {
+		return FileData{}, fmt.Errorf("seek to offset failed: %w", err)
+	}
+
+	// Write the combined kargs
 	if _, err := file.Write(finalKargs); err != nil {
 		return FileData{}, fmt.Errorf("write failed: %w", err)
 	}
@@ -143,11 +143,6 @@ func appendS390xKargs(isoPath string, filePath string, appendKargs []byte) (File
 	// Sync changes to disk
 	if err := file.Sync(); err != nil {
 		return FileData{}, fmt.Errorf("sync failed: %w", err)
-	}
-
-	fmt.Printf("Phani - Seeking back to start\n")
-	if _, err = file.Seek(0, io.SeekStart); err != nil {
-		return FileData{}, fmt.Errorf("seek to start failed: %w", err)
 	}
 
 	return FileData{filePath, file}, nil
