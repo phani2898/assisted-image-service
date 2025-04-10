@@ -135,26 +135,31 @@ func appendS390xKargs(isoPath string, filePath string, appendKargs []byte) (File
 	var finalKargs []byte
 	if len(existingKargs) > 0 {
 		// Trim any existing whitespace at end
-		existingKargs = bytes.TrimRight(existingKargs, " \n\r\t")
+		fmt.Printf("Phani - length of existing kargs %d\n", len(existingKargs))
+		fmt.Printf("Phani - Trimming spaces, newlines and 0 in the kargs for modification\n")
+		existingKargs = bytes.TrimRight(existingKargs, " \n\r\t\x00")
 		finalKargs = append(existingKargs, ' ') // Add space separator
 	}
 	finalKargs = append(finalKargs, appendKargs...)
-	fmt.Printf("Phani - Final kargs: [%s]\n", string(finalKargs))
+	fmt.Printf("Phani - length of final kargs before padding 0 %d\n", len(finalKargs))
+	//fmt.Printf("Phani - Final kargs: [%s]\n", string(finalKargs))
 
-	if len(finalKargs) > kargsConfig.Size {
-		paddingLength := len(finalKargs) - kargsConfig.Size
+	if len(finalKargs) < kargsConfig.Size {
+		fmt.Printf("Phani - Padding 0 at the end of kargs\n")
+		paddingLength := kargsConfig.Size - len(finalKargs)
 		zeroPadding := make([]byte, paddingLength)
-		if _, err := file.Write(zeroPadding); err != nil {
-			return FileData{}, fmt.Errorf("padding zeros failed: %w", err)
-		}
+		finalKargs = append(finalKargs, zeroPadding...)
+		fmt.Printf("Phani - length of final kargs before padding 0 %d\n", len(finalKargs))
 	}
 
 	// Seek back to the offset position to write
+	fmt.Printf("Phani - Seeking to kargs offset\n")
 	if _, err = file.Seek(kargsOffset, io.SeekStart); err != nil {
 		return FileData{}, fmt.Errorf("seek to offset failed: %w", err)
 	}
 
 	// Write the combined kargs
+	fmt.Printf("Phani - Writing the final kargs\n")
 	if _, err := file.Write(finalKargs); err != nil {
 		return FileData{}, fmt.Errorf("write failed: %w", err)
 	}
@@ -181,7 +186,7 @@ func kargsFileData(isoPath string, file string, appendKargs []byte) (FileData, e
 	defer baseISO.Close()
 
 	if strings.Contains(isoPath, "s390x") {
-		fmt.Println("Phani - Executing the s390x scenario")
+		fmt.Println("Phani - Executing the s390x scenario\n")
 		return appendS390xKargs(isoPath, file, appendKargs)
 	}
 
@@ -207,7 +212,7 @@ func NewKargsReader(isoPath string, appendKargs string) ([]FileData, error) {
 		return nil, nil
 	}
 	appendData := []byte(appendKargs)
-	if appendData[len(appendData)-1] != '\n' {
+	if appendData[len(appendData)-1] != '\n' && !strings.Contains(isoPath, "s390x") {
 		appendData = append(appendData, '\n')
 	}
 
