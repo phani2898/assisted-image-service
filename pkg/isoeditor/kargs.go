@@ -105,9 +105,12 @@ func appendS390xKargs(isoPath string, filePath string, appendKargs []byte) (File
 	if err := Extract(isoPath, isoTempDir); err != nil {
 		return FileData{}, fmt.Errorf("Phani - failed to extract ISO: %w", err)
 	}
-
 	absoluteFilePath := filepath.Join(isoTempDir, filePath)
 	fmt.Printf("Phani - Opening the file %s for modification\n", absoluteFilePath)
+
+	// Calculate the appendKathsOffset
+	existingKargs := []byte(kargsConfig.Default)
+	appendKargsOffset := kargsOffset + int64(len(existingKargs))
 
 	// Open file in read-write mode
 	file, err := os.OpenFile(absoluteFilePath, os.O_RDWR, 0644)
@@ -121,46 +124,15 @@ func appendS390xKargs(isoPath string, filePath string, appendKargs []byte) (File
 		}
 	}()
 
-	// Read existing content from the offset position
-	if _, err = file.Seek(kargsOffset, io.SeekStart); err != nil {
-		return FileData{}, fmt.Errorf("seek to offset failed: %w", err)
-	}
-
-	existingKargs, err := io.ReadAll(file)
-	if err != nil {
-		return FileData{}, fmt.Errorf("failed to read existing kargs: %w", err)
-	}
-
-	// Combine existing and new kargs
-	var finalKargs []byte
-	if len(existingKargs) > 0 {
-		// Trim any existing whitespace at end
-		fmt.Printf("Phani - length of existing kargs %d\n", len(existingKargs))
-		fmt.Printf("Phani - Trimming spaces, newlines and 0 in the kargs for modification\n")
-		existingKargs = bytes.TrimRight(existingKargs, " \n\r\t\x00")
-		finalKargs = append(existingKargs, ' ') // Add space separator
-	}
-	finalKargs = append(finalKargs, appendKargs...)
-	fmt.Printf("Phani - length of final kargs before padding 0 %d\n", len(finalKargs))
-	//fmt.Printf("Phani - Final kargs: [%s]\n", string(finalKargs))
-
-	if len(finalKargs) < kargsConfig.Size {
-		fmt.Printf("Phani - Padding 0 at the end of kargs\n")
-		paddingLength := kargsConfig.Size - len(finalKargs)
-		zeroPadding := make([]byte, paddingLength)
-		finalKargs = append(finalKargs, zeroPadding...)
-		fmt.Printf("Phani - length of final kargs before padding 0 %d\n", len(finalKargs))
-	}
-
 	// Seek back to the offset position to write
 	fmt.Printf("Phani - Seeking to kargs offset\n")
-	if _, err = file.Seek(kargsOffset, io.SeekStart); err != nil {
+	if _, err = file.Seek(appendKargsOffset, io.SeekStart); err != nil {
 		return FileData{}, fmt.Errorf("seek to offset failed: %w", err)
 	}
 
-	// Write the combined kargs
-	fmt.Printf("Phani - Writing the final kargs\n")
-	if _, err := file.Write(finalKargs); err != nil {
+	// Write the appendKargs
+	fmt.Printf("Phani - Writing the kargs\n")
+	if _, err := file.Write(appendKargs); err != nil {
 		return FileData{}, fmt.Errorf("write failed: %w", err)
 	}
 
