@@ -141,6 +141,14 @@ func appendS390xKargs(isoPath string, filePath string, appendKargs []byte) (File
 	finalKargs = append(finalKargs, appendKargs...)
 	fmt.Printf("Phani - Final kargs: [%s]\n", string(finalKargs))
 
+	if len(finalKargs) > kargsConfig.Size {
+		paddingLength := len(finalKargs) - kargsConfig.Size
+		zeroPadding := make([]byte, paddingLength)
+		if _, err := file.Write(zeroPadding); err != nil {
+			return FileData{}, fmt.Errorf("padding zeros failed: %w", err)
+		}
+	}
+
 	// Seek back to the offset position to write
 	if _, err = file.Seek(kargsOffset, io.SeekStart); err != nil {
 		return FileData{}, fmt.Errorf("seek to offset failed: %w", err)
