@@ -130,7 +130,6 @@ func appendS390xKargs(isoPath string, filePath string, appendKargs []byte) (File
 	if err != nil {
 		return FileData{}, fmt.Errorf("failed to read existing kargs: %w", err)
 	}
-	fmt.Printf("Phani - Existing kargs: %s\n", string(existingKargs))
 
 	// Combine existing and new kargs
 	var finalKargs []byte
@@ -140,7 +139,7 @@ func appendS390xKargs(isoPath string, filePath string, appendKargs []byte) (File
 		finalKargs = append(existingKargs, ' ') // Add space separator
 	}
 	finalKargs = append(finalKargs, appendKargs...)
-	fmt.Printf("Phani - Combined kargs: %s\n", string(finalKargs))
+	fmt.Printf("Phani - Final kargs: [%s]\n", string(finalKargs))
 
 	// Seek back to the offset position to write
 	if _, err = file.Seek(kargsOffset, io.SeekStart); err != nil {
