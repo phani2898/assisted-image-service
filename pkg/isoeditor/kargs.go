@@ -5,12 +5,13 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"github.com/openshift/assisted-image-service/pkg/overlay"
 	"io"
 	"os"
 	"path/filepath"
 	"regexp"
 	"strings"
+
+	"github.com/openshift/assisted-image-service/pkg/overlay"
 )
 
 const (
@@ -113,7 +114,12 @@ func appendS390xKargs(isoPath string, filePath string, appendKargs []byte) (File
 	if err != nil {
 		return FileData{}, fmt.Errorf("failed to open file: %w", err)
 	}
-	defer file.Close()
+	// Ensure file is closed if we exit early
+	defer func() {
+		if err != nil {
+			file.Close()
+		}
+	}()
 
 	// Read existing content from the offset position
 	if _, err = file.Seek(kargsOffset, io.SeekStart); err != nil {
@@ -143,6 +149,12 @@ func appendS390xKargs(isoPath string, filePath string, appendKargs []byte) (File
 	// Sync changes to disk
 	if err := file.Sync(); err != nil {
 		return FileData{}, fmt.Errorf("sync failed: %w", err)
+	}
+
+	//Seeking back to start
+	fmt.Printf("Phani - Seeking back to start\n")
+	if _, err = file.Seek(0, io.SeekStart); err != nil {
+		return FileData{}, fmt.Errorf("seek to start failed: %w", err)
 	}
 
 	return FileData{filePath, file}, nil
