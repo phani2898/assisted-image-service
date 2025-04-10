@@ -133,7 +133,13 @@ func appendS390xKargs(isoPath string, filePath string, appendKargs []byte) (File
 	fmt.Printf("Phani - Existing kargs: %s\n", string(existingKargs))
 
 	// Combine existing and new kargs
-	finalKargs := append(existingKargs, appendKargs...)
+	var finalKargs []byte
+	if len(existingKargs) > 0 {
+		// Trim any existing whitespace at end
+		existingKargs = bytes.TrimRight(existingKargs, " \n\r\t")
+		finalKargs = append(existingKargs, ' ') // Add space separator
+	}
+	finalKargs = append(finalKargs, appendKargs...)
 	fmt.Printf("Phani - Combined kargs: %s\n", string(finalKargs))
 
 	// Seek back to the offset position to write
