@@ -51,13 +51,13 @@ func KargsFiles(isoPath string) ([]string, error) {
 }
 
 func appendS390xKargs(isoPath string, filePath string, appendKargs []byte) (FileData, error) {
-	fmt.Printf("Phani - Reading file %s from ISO %s\n", filePath, isoPath)
-
+	// Read the kargs.json file content from the ISO
 	kargsData, err := ReadFileFromISO(isoPath, kargsConfigFilePath)
 	if err != nil {
 		return FileData{}, fmt.Errorf("failed to read kargs config: %w", err)
 	}
 
+	// Loading the kargs config JSON file
 	var kargsConfig struct {
 		Default string `json:"default"`
 		Files   []struct {
@@ -68,11 +68,9 @@ func appendS390xKargs(isoPath string, filePath string, appendKargs []byte) (File
 		} `json:"files"`
 		Size int `json:"size"`
 	}
-
 	if err := json.Unmarshal(kargsData, &kargsConfig); err != nil {
 		return FileData{}, fmt.Errorf("failed to unmarshal kargs config: %w", err)
 	}
-	fmt.Printf("Phani - Kargs config: %+v\n", kargsConfig)
 
 	// Finding offset for the target filePath
 	var kargsOffset int64
@@ -87,28 +85,25 @@ func appendS390xKargs(isoPath string, filePath string, appendKargs []byte) (File
 	if !found {
 		return FileData{}, fmt.Errorf("file %s not found in kargs config", filePath)
 	}
-	fmt.Printf("Phani - Found offset %d for file %s\n", kargsOffset, filePath)
 
-	// Create temp directory
+	// Create temp directory to mount ISO
 	isoTempDir, err := os.MkdirTemp("", "coreos-s390x-iso-")
 	if err != nil {
 		return FileData{}, fmt.Errorf("failed to create temp dir: %w", err)
 	}
 	defer func() {
 		if err := os.RemoveAll(isoTempDir); err != nil {
-			fmt.Printf("Phani - Warning: failed to clean up temp dir %s: %v\n", isoTempDir, err)
+			fmt.Printf("Warning: failed to clean up temp dir %s: %v\n", isoTempDir, err)
 		}
 	}()
 
-	// Extract ISO
-	fmt.Printf("Phani - Extracting ISO to %s\n", isoTempDir)
+	// Extract ISO and formulate the absolute filepath
 	if err := Extract(isoPath, isoTempDir); err != nil {
 		return FileData{}, fmt.Errorf("Phani - failed to extract ISO: %w", err)
 	}
 	absoluteFilePath := filepath.Join(isoTempDir, filePath)
-	fmt.Printf("Phani - Opening the file %s for modification\n", absoluteFilePath)
 
-	// Calculate the appendKathsOffset
+	// Calculate the extraKargsOffset
 	existingKargs := []byte(kargsConfig.Default)
 	appendKargsOffset := kargsOffset + int64(len(existingKargs))
 
@@ -124,25 +119,22 @@ func appendS390xKargs(isoPath string, filePath string, appendKargs []byte) (File
 		}
 	}()
 
-	// Seek back to the offset position to write
-	fmt.Printf("Phani - Seeking to kargs offset\n")
+	// Seek back to the extra kargs offset position to write
 	if _, err = file.Seek(appendKargsOffset, io.SeekStart); err != nil {
 		return FileData{}, fmt.Errorf("seek to offset failed: %w", err)
 	}
 
-	// Write the appendKargs
-	fmt.Printf("Phani - Writing the kargs\n")
+	// Writing the extra kargs
 	if _, err := file.Write(appendKargs); err != nil {
 		return FileData{}, fmt.Errorf("write failed: %w", err)
 	}
 
-	// Sync changes to disk
+	// Syncing changes to disk
 	if err := file.Sync(); err != nil {
 		return FileData{}, fmt.Errorf("sync failed: %w", err)
 	}
 
-	//Seeking back to start
-	fmt.Printf("Phani - Seeking back to start\n")
+	// Seeking back to start
 	if _, err = file.Seek(0, io.SeekStart); err != nil {
 		return FileData{}, fmt.Errorf("seek to start failed: %w", err)
 	}
@@ -158,7 +150,6 @@ func kargsFileData(isoPath string, file string, appendKargs []byte) (FileData, e
 	defer baseISO.Close()
 
 	if strings.Contains(isoPath, "s390x") {
-		fmt.Println("Phani - Executing the s390x scenario\n")
 		return appendS390xKargs(isoPath, file, appendKargs)
 	}
 
