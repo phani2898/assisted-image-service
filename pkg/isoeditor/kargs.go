@@ -12,6 +12,7 @@ import (
 	"strings"
 
 	"github.com/openshift/assisted-image-service/pkg/overlay"
+	"github.com/sirupsen/logrus"
 )
 
 const (
@@ -119,7 +120,7 @@ func appendS390xKargs(isoPath string, filePath string, appendKargs []byte) (File
 		}
 	}()
 
-	// Seek back to the extra kargs offset position to write
+	// Seeking to the extra kargs offset position to write
 	if _, err = file.Seek(appendKargsOffset, io.SeekStart); err != nil {
 		return FileData{}, fmt.Errorf("seek to offset failed: %w", err)
 	}
@@ -149,9 +150,9 @@ func kargsFileData(isoPath string, file string, appendKargs []byte) (FileData, e
 	}
 	defer baseISO.Close()
 
-	if strings.Contains(isoPath, "s390x") {
-		return appendS390xKargs(isoPath, file, appendKargs)
-	}
+	// if strings.Contains(isoPath, "s390x") {
+	// 	return appendS390xKargs(isoPath, file, appendKargs)
+	// }
 
 	iso, err := readerForKargsContent(isoPath, file, baseISO, bytes.NewReader(appendKargs))
 	if err != nil {
@@ -205,17 +206,65 @@ func kargsEmbedAreaBoundariesFinder(isoPath, filePath string, fileBoundariesFind
 		return 0, 0, err
 	}
 
-	b, err := fileReader(isoPath, filePath)
-	if err != nil {
-		return 0, 0, err
+	var kargsStart, kargsLength int64
+
+	if strings.Contains(isoPath, "s390x") {
+		// Read the kargs.json file content from the ISO
+		logrus.Debug("Phani - Executing s390x scenario")
+		kargsData, err := ReadFileFromISO(isoPath, kargsConfigFilePath)
+		if err != nil {
+			return 0, 0, err
+		}
+
+		// Loading the kargs config JSON file
+		var kargsConfig struct {
+			Default string `json:"default"`
+			Files   []struct {
+				Path   string `json:"path"`
+				Offset int64  `json:"offset"`
+				End    string `json:"end"`
+				Pad    string `json:"pad"`
+			} `json:"files"`
+			Size int `json:"size"`
+		}
+		if err := json.Unmarshal(kargsData, &kargsConfig); err != nil {
+			return 0, 0, err
+		}
+
+		// Finding offset for the target filePath
+		var kargsOffset int64
+		var found bool
+		for _, file := range kargsConfig.Files {
+			if file.Path == filePath {
+				kargsOffset = file.Offset
+				found = true
+				break
+			}
+		}
+		if !found {
+			return 0, 0, err
+		}
+
+		kargsStart = start + kargsOffset
+		logrus.Debug("Phani - kargsOffset", kargsOffset)
+		kargsLength = int64(kargsConfig.Size)
+		logrus.Debug("Phani - kargsLength", kargsLength)
+	} else {
+		b, err := fileReader(isoPath, filePath)
+		if err != nil {
+			return 0, 0, err
+		}
+
+		re := regexp.MustCompile(`(\n#*)# COREOS_KARG_EMBED_AREA`)
+		submatchIndexes := re.FindSubmatchIndex(b)
+		if len(submatchIndexes) != 4 {
+			return 0, 0, errors.New("failed to find COREOS_KARG_EMBED_AREA")
+		}
+		kargsStart = start + int64(submatchIndexes[2])
+		kargsLength = int64(submatchIndexes[3] - submatchIndexes[2])
 	}
 
-	re := regexp.MustCompile(`(\n#*)# COREOS_KARG_EMBED_AREA`)
-	submatchIndexes := re.FindSubmatchIndex(b)
-	if len(submatchIndexes) != 4 {
-		return 0, 0, errors.New("failed to find COREOS_KARG_EMBED_AREA")
-	}
-	return start + int64(submatchIndexes[2]), int64(submatchIndexes[3] - submatchIndexes[2]), nil
+	return kargsStart, kargsLength, nil
 }
 
 func createKargsEmbedAreaBoundariesFinder() BoundariesFinder {
