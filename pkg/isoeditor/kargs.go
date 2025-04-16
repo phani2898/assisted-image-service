@@ -108,7 +108,6 @@ func kargsFileData(isoPath string, file string, appendKargs []byte) (FileData, e
 	if err != nil {
 		return FileData{}, err
 	}
-	defer baseISO.Close()
 
 	var iso overlay.OverlayReader
 
@@ -118,12 +117,13 @@ func kargsFileData(isoPath string, file string, appendKargs []byte) (FileData, e
 		iso, err = readerForKargsContent(isoPath, file, baseISO, bytes.NewReader(appendKargs))
 	}
 	if err != nil {
+		baseISO.Close()
 		return FileData{}, err
 	}
-	defer iso.Close()
 
 	fileData, _, err := isolateISOFile(isoPath, file, iso, 0)
 	if err != nil {
+		iso.Close()
 		return FileData{}, err
 	}
 
