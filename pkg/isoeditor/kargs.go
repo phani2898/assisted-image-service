@@ -113,18 +113,14 @@ func kargsFileData(isoPath string, file string, appendKargs []byte) (FileData, e
 	var iso overlay.OverlayReader
 
 	if strings.Contains(isoPath, "s390x") {
-		iso, err := readerForKargsS390x(isoPath, file, baseISO, bytes.NewReader(appendKargs))
-		if err != nil {
-			return FileData{}, err
-		}
-		defer iso.Close()
+		iso, err = readerForKargsS390x(isoPath, file, baseISO, bytes.NewReader(appendKargs))
 	} else {
-		iso, err := readerForKargsContent(isoPath, file, baseISO, bytes.NewReader(appendKargs))
-		if err != nil {
-			return FileData{}, err
-		}
-		defer iso.Close()
+		iso, err = readerForKargsContent(isoPath, file, baseISO, bytes.NewReader(appendKargs))
 	}
+	if err != nil {
+		return FileData{}, err
+	}
+	defer iso.Close()
 
 	fileData, _, err := isolateISOFile(isoPath, file, iso, 0)
 	if err != nil {
