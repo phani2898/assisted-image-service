@@ -54,7 +54,7 @@ func readerForKargsS390x(isoPath string, filePath string, base io.ReadSeeker, co
 	// Read the kargs.json file content from the ISO
 	kargsData, err := ReadFileFromISO(isoPath, kargsConfigFilePath)
 	if err != nil {
-		return FileData{}, fmt.Errorf("failed to read kargs config: %w", err)
+		return nil, fmt.Errorf("failed to read kargs config: %w", err)
 	}
 
 	// Loading the kargs config JSON file
@@ -69,7 +69,7 @@ func readerForKargsS390x(isoPath string, filePath string, base io.ReadSeeker, co
 		Size int `json:"size"`
 	}
 	if err := json.Unmarshal(kargsData, &kargsConfig); err != nil {
-		return FileData{}, fmt.Errorf("failed to unmarshal kargs config: %w", err)
+		return nil, fmt.Errorf("failed to unmarshal kargs config: %w", err)
 	}
 
 	// Finding offset for the target filePath
@@ -83,7 +83,7 @@ func readerForKargsS390x(isoPath string, filePath string, base io.ReadSeeker, co
 		}
 	}
 	if !found {
-		return FileData{}, fmt.Errorf("file %s not found in kargs config", filePath)
+		return nil, fmt.Errorf("file %s not found in kargs config", filePath)
 	}
 
 	// Calculate the extraKargsOffset
