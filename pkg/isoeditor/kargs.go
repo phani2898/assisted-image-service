@@ -50,7 +50,7 @@ func KargsFiles(isoPath string) ([]string, error) {
 	return kargsFiles(isoPath, ReadFileFromISO)
 }
 
-func appendS390xKargs(isoPath string, filePath string, appendKargs []byte) (FileData, error) {
+func readerForKargsS390x(isoPath string, filePath string, base io.ReadSeeker, contentReader *bytes.Reader) (overlay.OverlayReader, error) {
 	// Read the kargs.json file content from the ISO
 	kargsData, err := ReadFileFromISO(isoPath, kargsConfigFilePath)
 	if err != nil {
@@ -86,60 +86,21 @@ func appendS390xKargs(isoPath string, filePath string, appendKargs []byte) (File
 		return FileData{}, fmt.Errorf("file %s not found in kargs config", filePath)
 	}
 
-	// Create temp directory to mount ISO
-	isoTempDir, err := os.MkdirTemp("", "coreos-s390x-iso-")
-	if err != nil {
-		return FileData{}, fmt.Errorf("failed to create temp dir: %w", err)
-	}
-	defer func() {
-		if err := os.RemoveAll(isoTempDir); err != nil {
-			fmt.Printf("Warning: failed to clean up temp dir %s: %v\n", isoTempDir, err)
-		}
-	}()
-
-	// Extract ISO and formulate the absolute filepath
-	if err := Extract(isoPath, isoTempDir); err != nil {
-		return FileData{}, fmt.Errorf("Phani - failed to extract ISO: %w", err)
-	}
-	absoluteFilePath := filepath.Join(isoTempDir, filePath)
-
 	// Calculate the extraKargsOffset
 	existingKargs := []byte(kargsConfig.Default)
 	appendKargsOffset := kargsOffset + int64(len(existingKargs))
 
-	// Open file in read-write mode
-	file, err := os.OpenFile(absoluteFilePath, os.O_RDWR, 0644)
+	rdOverlay := overlay.Overlay{
+		Reader: contentReader,
+		Offset: appendKargsOffset,
+		Length: contentReader.Size(),
+	}
+	r, err := overlay.NewOverlayReader(base, rdOverlay)
 	if err != nil {
-		return FileData{}, fmt.Errorf("failed to open file: %w", err)
-	}
-	// Ensure file is closed if we exit early
-	defer func() {
-		if err != nil {
-			file.Close()
-		}
-	}()
-
-	// Seek back to the extra kargs offset position to write
-	if _, err = file.Seek(appendKargsOffset, io.SeekStart); err != nil {
-		return FileData{}, fmt.Errorf("seek to offset failed: %w", err)
+		return nil, err
 	}
 
-	// Writing the extra kargs
-	if _, err := file.Write(appendKargs); err != nil {
-		return FileData{}, fmt.Errorf("write failed: %w", err)
-	}
-
-	// Syncing changes to disk
-	if err := file.Sync(); err != nil {
-		return FileData{}, fmt.Errorf("sync failed: %w", err)
-	}
-
-	// Seeking back to start
-	if _, err = file.Seek(0, io.SeekStart); err != nil {
-		return FileData{}, fmt.Errorf("seek to start failed: %w", err)
-	}
-
-	return FileData{filePath, file}, nil
+	return r, nil
 }
 
 func kargsFileData(isoPath string, file string, appendKargs []byte) (FileData, error) {
@@ -149,15 +110,21 @@ func kargsFileData(isoPath string, file string, appendKargs []byte) (FileData, e
 	}
 	defer baseISO.Close()
 
-	if strings.Contains(isoPath, "s390x") {
-		return appendS390xKargs(isoPath, file, appendKargs)
-	}
+	var iso overlay.OverlayReader
 
-	iso, err := readerForKargsContent(isoPath, file, baseISO, bytes.NewReader(appendKargs))
-	if err != nil {
-		return FileData{}, err
+	if strings.Contains(isoPath, "s390x") {
+		iso, err := readerForKargsS390x(isoPath, file, baseISO, bytes.NewReader(appendKargs))
+		if err != nil {
+			return FileData{}, err
+		}
+		defer iso.Close()
+	} else {
+		iso, err := readerForKargsContent(isoPath, file, baseISO, bytes.NewReader(appendKargs))
+		if err != nil {
+			return FileData{}, err
+		}
+		defer iso.Close()
 	}
-	defer iso.Close()
 
 	fileData, _, err := isolateISOFile(isoPath, file, iso, 0)
 	if err != nil {
