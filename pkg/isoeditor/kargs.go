@@ -11,7 +11,6 @@ import (
 	"strings"
 
 	"github.com/openshift/assisted-image-service/pkg/overlay"
-	"github.com/phani2898/assisted-image-service/pkg/overlay"
 )
 
 const (
@@ -52,16 +51,10 @@ func KargsFiles(isoPath string) ([]string, error) {
 
 func readerForKargsS390x(isoPath string, filePath string, base io.ReadSeeker, contentReader *bytes.Reader) (overlay.OverlayReader, error) {
 
-	rdOverlay := overlay.Overlay{
-		Reader: contentReader,
-		Offset: 0,
-		Length: contentReader.Size(),
-	}
-
 	// Read the kargs.json file content from the ISO
 	kargsData, err := ReadFileFromISO(isoPath, kargsConfigFilePath)
 	if err != nil {
-		return rdOverlay, fmt.Errorf("failed to read kargs config: %w", err)
+		return nil, fmt.Errorf("failed to read kargs config: %w", err)
 	}
 
 	// Loading the kargs config JSON file
@@ -76,7 +69,7 @@ func readerForKargsS390x(isoPath string, filePath string, base io.ReadSeeker, co
 		Size int `json:"size"`
 	}
 	if err := json.Unmarshal(kargsData, &kargsConfig); err != nil {
-		return rdOverlay, fmt.Errorf("failed to unmarshal kargs config: %w", err)
+		return nil, fmt.Errorf("failed to unmarshal kargs config: %w", err)
 	}
 
 	// Finding offset for the target filePath
@@ -90,14 +83,14 @@ func readerForKargsS390x(isoPath string, filePath string, base io.ReadSeeker, co
 		}
 	}
 	if !found {
-		return rdOverlay, fmt.Errorf("file %s not found in kargs config", filePath)
+		return nil, fmt.Errorf("file %s not found in kargs config", filePath)
 	}
 
 	// Calculate the extraKargsOffset
 	existingKargs := []byte(kargsConfig.Default)
 	appendKargsOffset := kargsOffset + int64(len(existingKargs))
 
-	rdOverlay = overlay.Overlay{
+	rdOverlay := overlay.Overlay{
 		Reader: contentReader,
 		Offset: appendKargsOffset,
 		Length: contentReader.Size(),
