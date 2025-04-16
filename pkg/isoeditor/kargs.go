@@ -11,6 +11,7 @@ import (
 	"strings"
 
 	"github.com/openshift/assisted-image-service/pkg/overlay"
+	"github.com/sirupsen/logrus"
 )
 
 const (
@@ -50,6 +51,12 @@ func KargsFiles(isoPath string) ([]string, error) {
 }
 
 func readerForKargsS390x(isoPath string, filePath string, base io.ReadSeeker, contentReader *bytes.Reader) (overlay.OverlayReader, error) {
+	// Get the fileOffset in ISO
+	fileOffset, _, err := GetISOFileInfo(filePath, isoPath)
+	if err != nil {
+		return nil, err
+	}
+	logrus.Debug("readerForKargsS390x AIS fileOffset Phani ", fileOffset)
 
 	// Read the kargs.json file content from the ISO
 	kargsData, err := ReadFileFromISO(isoPath, kargsConfigFilePath)
@@ -88,7 +95,8 @@ func readerForKargsS390x(isoPath string, filePath string, base io.ReadSeeker, co
 
 	// Calculate the extraKargsOffset
 	existingKargs := []byte(kargsConfig.Default)
-	appendKargsOffset := kargsOffset + int64(len(existingKargs))
+	appendKargsOffset := fileOffset + kargsOffset + int64(len(existingKargs))
+	logrus.Debug("readerForKargsS390x AIS appendKargsOffset Phani ", fileOffset)
 
 	rdOverlay := overlay.Overlay{
 		Reader: contentReader,
@@ -126,6 +134,7 @@ func kargsFileData(isoPath string, file string, appendKargs []byte) (FileData, e
 		iso.Close()
 		return FileData{}, err
 	}
+	logrus.Debug("AIS fileData Phani ", fileData.Data)
 
 	return fileData, nil
 }

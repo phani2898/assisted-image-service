@@ -4,6 +4,7 @@ import (
 	"io"
 
 	"github.com/openshift/assisted-image-service/pkg/overlay"
+	"github.com/sirupsen/logrus"
 )
 
 type FileData struct {
@@ -16,6 +17,9 @@ func isolateISOFile(isoPath, file string, data overlay.OverlayReader, minLength 
 	if err != nil {
 		return FileData{}, false, err
 	}
+	logrus.Debug("Isolate AIS filePath Phani ", file)
+	logrus.Debug("Isolate AIS fileOffset Phani ", fileOffset)
+	logrus.Debug("Isolate AIS fileLength Phani ", fileLength)
 
 	expanded := false
 	if minLength > fileLength {
