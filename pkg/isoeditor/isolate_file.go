@@ -2,9 +2,9 @@ package isoeditor
 
 import (
 	"io"
+	"strings"
 
 	"github.com/openshift/assisted-image-service/pkg/overlay"
-	"github.com/sirupsen/logrus"
 )
 
 type FileData struct {
@@ -17,9 +17,6 @@ func isolateISOFile(isoPath, file string, data overlay.OverlayReader, minLength 
 	if err != nil {
 		return FileData{}, false, err
 	}
-	logrus.Debug("Isolate AIS filePath Phani ", file)
-	logrus.Debug("Isolate AIS fileOffset Phani ", fileOffset)
-	logrus.Debug("Isolate AIS fileLength Phani ", fileLength)
 
 	expanded := false
 	if minLength > fileLength {
@@ -27,8 +24,15 @@ func isolateISOFile(isoPath, file string, data overlay.OverlayReader, minLength 
 		expanded = true
 	}
 
-	if _, err := data.Seek(fileOffset, io.SeekStart); err != nil {
-		return FileData{}, false, err
+	// If we seek to the content Offset instead of fileOffset we will only get the required kargs or ignition data but we also need normal file reader
+	if strings.Contains(isoPath, "s390x") {
+		if _, err := data.Seek(data.Overlay.Offset, io.SeekStart); err != nil {
+			return FileData{}, false, err
+		}
+	} else {
+		if _, err := data.Seek(fileOffset, io.SeekStart); err != nil {
+			return FileData{}, false, err
+		}
 	}
 	fileData := struct {
 		io.Reader

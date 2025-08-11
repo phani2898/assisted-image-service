@@ -50,13 +50,112 @@ func KargsFiles(isoPath string) ([]string, error) {
 	return kargsFiles(isoPath, ReadFileFromISO)
 }
 
+func EmbedKargs(isoPath string, customKargs string) error {
+	// Read the kargs.json file content from the ISO
+	kargsData, err := ReadFileFromISO(isoPath, kargsConfigFilePath)
+	if err != nil {
+		return fmt.Errorf("failed to read kargs config: %w", err)
+	}
+
+	// Loading the kargs config JSON file
+	var kargsConfig struct {
+		Default string `json:"default"`
+		Files   []struct {
+			Path   string `json:"path"`
+			Offset int64  `json:"offset"`
+			End    string `json:"end"`
+			Pad    string `json:"pad"`
+		} `json:"files"`
+		Size int `json:"size"`
+	}
+	if err := json.Unmarshal(kargsData, &kargsConfig); err != nil {
+		return fmt.Errorf("failed to parse coreos/kargs.json: %w", err)
+	}
+
+	// Make sure kargs config files are present
+	if len(kargsConfig.Files) == 0 {
+		return fmt.Errorf("no kargs file entries found in coreos/kargs.json")
+	}
+
+	// Fetch kargs files from the ISO
+	files, err := KargsFiles(isoPath)
+	if err != nil {
+		return err
+	}
+
+	// Embed kargs config into each file
+	for _, filePath := range files {
+		// Check if file exists
+		fileExists, err := fileExists(filePath)
+		if err != nil {
+			return err
+		}
+		if !fileExists {
+			return fmt.Errorf("file %s does not exist", filePath)
+		}
+
+		// Finding offset for the target filePath
+		var kargsOffset int64
+		for _, file := range kargsConfig.Files {
+			if file.Path == filePath {
+				kargsOffset = file.Offset
+				break
+			}
+		}
+
+		// Calculate the customKargsOffset
+		existingKargs := []byte(kargsConfig.Default)
+		appendKargsOffset := kargsOffset + int64(len(existingKargs))
+
+		// Now open the file for read/write and patch at offset
+		f, err := os.OpenFile(filePath, os.O_RDWR, 0)
+		if err != nil {
+			return fmt.Errorf("failed to open target file %s: %w", filePath, err)
+		}
+		defer f.Close()
+
+		// Seek to the kargs offset in the filePath
+		_, err = f.Seek(appendKargsOffset, io.SeekStart)
+		if err != nil {
+			return fmt.Errorf("failed to seek to kargs offset %d in %s: %w", appendKargsOffset, filePath, err)
+		}
+
+		// Determine available field size if possible
+		var maxLen int64
+		if kargsConfig.Size > 0 {
+			maxLen = int64(kargsConfig.Size)
+		} else {
+			// Try to get remaining bytes until next file or EOF (best-effort)
+			// If we can't determine a safe max, at least ensure we don't write beyond file size.
+			fi, statErr := f.Stat()
+			if statErr == nil {
+				maxLen = fi.Size() - appendKargsOffset
+			}
+		}
+
+		// Ensure we won't overflow the field
+		kargsLength := len(existingKargs) + len(customKargs)
+		if maxLen > 0 && int64(kargsLength) > maxLen {
+			return fmt.Errorf("kargs length %d exceeds available field size %d", kargsLength, maxLen)
+		}
+
+		// Write the kargs bytes
+		if _, err = f.Write([]byte(customKargs)); err != nil {
+			return fmt.Errorf("failed writing kargs into %s at offset %d: %w", filePath, appendKargsOffset, err)
+		}
+
+		logrus.Infof("Patched kargs into %s)", filePath)
+	}
+
+	return nil
+}
+
 func readerForKargsS390x(isoPath string, filePath string, base io.ReadSeeker, contentReader *bytes.Reader) (overlay.OverlayReader, error) {
 	// Get the fileOffset in ISO
 	fileOffset, _, err := GetISOFileInfo(filePath, isoPath)
 	if err != nil {
 		return nil, err
 	}
-	logrus.Debug("readerForKargsS390x AIS fileOffset Phani ", fileOffset)
 
 	// Read the kargs.json file content from the ISO
 	kargsData, err := ReadFileFromISO(isoPath, kargsConfigFilePath)
@@ -76,7 +175,7 @@ func readerForKargsS390x(isoPath string, filePath string, base io.ReadSeeker, co
 		Size int `json:"size"`
 	}
 	if err := json.Unmarshal(kargsData, &kargsConfig); err != nil {
-		return nil, fmt.Errorf("failed to unmarshal kargs config: %w", err)
+		return nil, fmt.Errorf("failed to parse coreos/kargs.json: %w", err)
 	}
 
 	// Finding offset for the target filePath
@@ -96,7 +195,6 @@ func readerForKargsS390x(isoPath string, filePath string, base io.ReadSeeker, co
 	// Calculate the extraKargsOffset
 	existingKargs := []byte(kargsConfig.Default)
 	appendKargsOffset := fileOffset + kargsOffset + int64(len(existingKargs))
-	logrus.Debug("readerForKargsS390x AIS appendKargsOffset Phani ", fileOffset)
 
 	rdOverlay := overlay.Overlay{
 		Reader: contentReader,
@@ -128,6 +226,8 @@ func kargsFileData(isoPath string, file string, appendKargs []byte) (FileData, e
 		baseISO.Close()
 		return FileData{}, err
 	}
+
+	// iso.overlay will have overlay content reader which is required
 
 	fileData, _, err := isolateISOFile(isoPath, file, iso, 0)
 	if err != nil {
