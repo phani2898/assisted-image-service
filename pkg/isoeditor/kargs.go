@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"path/filepath"
 	"regexp"
 	"strings"
 
@@ -50,7 +51,7 @@ func KargsFiles(isoPath string) ([]string, error) {
 	return kargsFiles(isoPath, ReadFileFromISO)
 }
 
-func EmbedKargs(isoPath string, customKargs string) error {
+func EmbedKargs(isoPath string, tmpPath string, customKargs string) error {
 	// Read the kargs.json file content from the ISO
 	kargsData, err := ReadFileFromISO(isoPath, kargsConfigFilePath)
 	if err != nil {
@@ -86,12 +87,13 @@ func EmbedKargs(isoPath string, customKargs string) error {
 	// Embed kargs config into each file
 	for _, filePath := range files {
 		// Check if file exists
-		fileExists, err := fileExists(filePath)
+		absFilePath := filepath.Join(tmpPath, filePath)
+		fileExists, err := fileExists(absFilePath)
 		if err != nil {
 			return err
 		}
 		if !fileExists {
-			return fmt.Errorf("file %s does not exist", filePath)
+			return fmt.Errorf("file %s does not exist", absFilePath)
 		}
 
 		// Finding offset for the target filePath
@@ -108,16 +110,16 @@ func EmbedKargs(isoPath string, customKargs string) error {
 		appendKargsOffset := kargsOffset + int64(len(existingKargs))
 
 		// Now open the file for read/write and patch at offset
-		f, err := os.OpenFile(filePath, os.O_RDWR, 0)
+		f, err := os.OpenFile(absFilePath, os.O_RDWR, 0)
 		if err != nil {
-			return fmt.Errorf("failed to open target file %s: %w", filePath, err)
+			return fmt.Errorf("failed to open target file %s: %w", absFilePath, err)
 		}
 		defer f.Close()
 
 		// Seek to the kargs offset in the filePath
 		_, err = f.Seek(appendKargsOffset, io.SeekStart)
 		if err != nil {
-			return fmt.Errorf("failed to seek to kargs offset %d in %s: %w", appendKargsOffset, filePath, err)
+			return fmt.Errorf("failed to seek to kargs offset %d in %s: %w", appendKargsOffset, absFilePath, err)
 		}
 
 		// Determine available field size if possible
@@ -141,10 +143,10 @@ func EmbedKargs(isoPath string, customKargs string) error {
 
 		// Write the kargs bytes
 		if _, err = f.Write([]byte(customKargs)); err != nil {
-			return fmt.Errorf("failed writing kargs into %s at offset %d: %w", filePath, appendKargsOffset, err)
+			return fmt.Errorf("failed writing kargs into %s at offset %d: %w", absFilePath, appendKargsOffset, err)
 		}
 
-		logrus.Infof("Patched kargs into %s)", filePath)
+		logrus.Infof("Patched kargs into %s)", absFilePath)
 	}
 
 	return nil
