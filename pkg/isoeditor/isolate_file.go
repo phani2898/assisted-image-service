@@ -2,6 +2,7 @@ package isoeditor
 
 import (
 	"io"
+	"strings"
 
 	"github.com/openshift/assisted-image-service/pkg/overlay"
 )
@@ -24,8 +25,14 @@ func isolateISOFile(isoPath, file string, data overlay.OverlayReader, minLength 
 	}
 
 	// If we seek to the content Offset instead of fileOffset we will only get the required kargs or ignition data but we also need normal file reader
-	if _, err := data.Seek(fileOffset, io.SeekStart); err != nil {
-		return FileData{}, false, err
+	if strings.Contains(isoPath, "s390x") {
+		if _, err := data.Seek(data.Overlay.Offset, io.SeekStart); err != nil {
+			return FileData{}, false, err
+		}
+	} else {
+		if _, err := data.Seek(fileOffset, io.SeekStart); err != nil {
+			return FileData{}, false, err
+		}
 	}
 	fileData := struct {
 		io.Reader

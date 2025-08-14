@@ -51,11 +51,18 @@ func KargsFiles(isoPath string) ([]string, error) {
 	return kargsFiles(isoPath, ReadFileFromISO)
 }
 
-func EmbedKargs(isoPath string, tmpPath string, customKargs string) error {
+// EmbedKargsIntoBootImage appends custom kernel arguments into a staging ISO image that
+// already contains an ignition config, using offsets and size limits defined in `coreos/kargs.json`
+// that are extracted from the original base ISO.
+//
+// This function is only invoked when both the ignition config and kernel arguments must be embedded
+// into the same boot image.
+func EmbedKargsIntoBootImage(baseIsoPath string, stagingIsoPath string, customKargs string) error {
+
 	// Read the kargs.json file content from the ISO
-	kargsData, err := ReadFileFromISO(isoPath, kargsConfigFilePath)
+	kargsData, err := ReadFileFromISO(baseIsoPath, kargsConfigFilePath)
 	if err != nil {
-		return fmt.Errorf("failed to read kargs config: %w", err)
+		return fmt.Errorf("Failed to read kargs config from %s: %w", kargsConfigFilePath, err)
 	}
 
 	// Loading the kargs config JSON file
@@ -70,16 +77,16 @@ func EmbedKargs(isoPath string, tmpPath string, customKargs string) error {
 		Size int `json:"size"`
 	}
 	if err := json.Unmarshal(kargsData, &kargsConfig); err != nil {
-		return fmt.Errorf("failed to parse coreos/kargs.json: %w", err)
+		return fmt.Errorf("Failed to parse %s: %w", kargsConfigFilePath, err)
 	}
 
 	// Make sure kargs config files are present
 	if len(kargsConfig.Files) == 0 {
-		return fmt.Errorf("no kargs file entries found in coreos/kargs.json")
+		return fmt.Errorf("No kargs file entries found in %s", kargsConfigFilePath)
 	}
 
 	// Fetch kargs files from the ISO
-	files, err := KargsFiles(isoPath)
+	files, err := KargsFiles(baseIsoPath)
 	if err != nil {
 		return err
 	}
@@ -87,7 +94,7 @@ func EmbedKargs(isoPath string, tmpPath string, customKargs string) error {
 	// Embed kargs config into each file
 	for _, filePath := range files {
 		// Check if file exists
-		absFilePath := filepath.Join(tmpPath, filePath)
+		absFilePath := filepath.Join(stagingIsoPath, filePath)
 		fileExists, err := fileExists(absFilePath)
 		if err != nil {
 			return err
@@ -122,7 +129,7 @@ func EmbedKargs(isoPath string, tmpPath string, customKargs string) error {
 			return fmt.Errorf("failed to seek to kargs offset %d in %s: %w", appendKargsOffset, absFilePath, err)
 		}
 
-		// Determine available field size if possible
+		// Determine available kargs field size if possible
 		var maxLen int64
 		if kargsConfig.Size > 0 {
 			maxLen = int64(kargsConfig.Size)
@@ -135,7 +142,7 @@ func EmbedKargs(isoPath string, tmpPath string, customKargs string) error {
 			}
 		}
 
-		// Ensure we won't overflow the field
+		// Ensure to not overflow the kargs field size
 		kargsLength := len(existingKargs) + len(customKargs)
 		if maxLen > 0 && int64(kargsLength) > maxLen {
 			return fmt.Errorf("kargs length %d exceeds available field size %d", kargsLength, maxLen)
@@ -143,10 +150,8 @@ func EmbedKargs(isoPath string, tmpPath string, customKargs string) error {
 
 		// Write the kargs bytes
 		if _, err = f.Write([]byte(customKargs)); err != nil {
-			return fmt.Errorf("failed writing kargs into %s at offset %d: %w", absFilePath, appendKargsOffset, err)
+			return fmt.Errorf("Failed writing kargs into %s: %w", absFilePath, err)
 		}
-
-		logrus.Infof("Patched kargs into %s)", absFilePath)
 	}
 
 	return nil
