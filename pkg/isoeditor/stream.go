@@ -44,8 +44,15 @@ func NewRHCOSStreamReader(isoPath string, ignitionContent *IgnitionContent, ramd
 		if err != nil {
 			return nil, errors.Wrap(err, "failed to read files to patch for kernel arguments")
 		}
+
+		// Read kargs config once to pass to readerForKargsContentWithConfig
+		// We ignore the error here because if it fails, the reader will fall back to regex
+		// inside readerForKargsContentWithConfig if data is nil.
+		// However, for s390x we really want this to succeed if the file exists.
+		kargsData, _ := ReadFileFromISO(isoPath, kargsConfigFilePath)
+
 		for _, file := range files {
-			r, err = readerForKargsContent(isoPath, file, r, bytes.NewReader(kargs))
+			r, err = readerForKargsContentWithConfig(isoPath, file, r, bytes.NewReader(kargs), kargsData)
 			if err != nil {
 				return nil, errors.Wrapf(err, "failed to create overwrite reader for kernel arguments in file \"%s\"", file)
 			}

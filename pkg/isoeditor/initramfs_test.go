@@ -21,10 +21,14 @@ var _ = Describe("NewInitRamFSStreamReader", func() {
 			114, 126, 94, 73, 106, 94, 9, 3, 138, 123, 8, 1, 98, 213, 225, 116,
 			79, 72, 144, 163, 167, 143, 107, 144, 162, 162, 34, 200, 61, 128, 0, 0,
 			0, 255, 255, 191, 236, 44, 242, 12, 1, 0, 0, 0}
+		filesDir   string
+		initrdPath string
 	)
 
-	filesDir, _ := createTestFiles("Assisted123")
-	initrdPath := filepath.Join(filesDir, "images/ignition.img")
+	BeforeEach(func() {
+		filesDir, _ = createTestFiles("Assisted123")
+		initrdPath = filepath.Join(filesDir, "images/ignition.img")
+	})
 
 	It("appends the ignition", func() {
 		streamReader, err := NewInitRamFSStreamReader(initrdPath, &IgnitionContent{ignitionContent})
