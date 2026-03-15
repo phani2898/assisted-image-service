@@ -159,7 +159,8 @@ menuentry 'Fedora CoreOS (Live)' --class fedora --class gnu-linux --class gnu --
 		)
 
 		mockBoundariesFinder := func(filePath, isoPath string) (int64, int64, error) {
-			if filePath == "cdboot.img" {
+			// Mock finder expects absolute path because kargsConfigBoundariesFinder normalized it
+			if filePath == "/cdboot.img" {
 				return mockBoundariesFinderStart, mockBoundariesFinderSize, nil
 			}
 			return 0, 0, nil
@@ -167,6 +168,7 @@ menuentry 'Fedora CoreOS (Live)' --class fedora --class gnu-linux --class gnu --
 
 		It("successfully finds boundaries from valid config", func() {
 			kargsJSON := []byte(`{
+            "default": "default=args",
             "files": [
                 {
                     "path": "cdboot.img",
@@ -176,11 +178,15 @@ menuentry 'Fedora CoreOS (Live)' --class fedora --class gnu-linux --class gnu --
             ]
         }`)
 
+			// We pass "cdboot.img" (relative) as filePath, matching what's in JSON
 			start, length, err := kargsConfigBoundariesFinder("dummy.iso", "cdboot.img", kargsJSON, mockBoundariesFinder)
 			Expect(err).ToNot(HaveOccurred())
-			// Absolute start should be ISO file start (1000) + offset (50) = 1050
-			Expect(start).To(Equal(mockBoundariesFinderStart + 50))
-			Expect(length).To(Equal(int64(100)))
+
+			// Absolute start should be ISO file start (1000) + offset (50) + len("default=args") (12) = 1062
+			Expect(start).To(Equal(mockBoundariesFinderStart + 50 + 12))
+
+			// Available length should be size (100) - len("default=args") (12) = 88
+			Expect(length).To(Equal(int64(100 - 12)))
 		})
 
 		It("returns error if file not in config", func() {

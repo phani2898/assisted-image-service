@@ -128,7 +128,8 @@ func createKargsEmbedAreaBoundariesFinder() BoundariesFinder {
 
 func kargsConfigBoundariesFinder(isoPath, filePath string, kargsData []byte, isoFileInfoProvider BoundariesFinder) (int64, int64, error) {
 	var kargsConfig struct {
-		Files []struct {
+		Default string `json:"default"`
+		Files   []struct {
 			Path   string `json:"path"`
 			Offset int64  `json:"offset"`
 			Size   int    `json:"size"`
@@ -141,11 +142,24 @@ func kargsConfigBoundariesFinder(isoPath, filePath string, kargsData []byte, iso
 	for _, file := range kargsConfig.Files {
 		if file.Path == filePath {
 			// Get the fileOffset in ISO to calculate absolute offset
-			fileOffset, _, err := isoFileInfoProvider(filePath, isoPath)
+			// Ensure path starts with / for diskfs lookup
+			lookupPath := filePath
+			if len(lookupPath) > 0 && lookupPath[0] != '/' {
+				lookupPath = "/" + lookupPath
+			}
+			fileOffset, _, err := isoFileInfoProvider(lookupPath, isoPath)
 			if err != nil {
 				return 0, 0, err
 			}
-			return fileOffset + file.Offset, int64(file.Size), nil
+
+			// We want to append to the existing default arguments, so we start writing
+			// after the default content.
+			appendOffset := fileOffset + file.Offset + int64(len(kargsConfig.Default))
+
+			// The available size for *new* args is the total area size minus what's taken by default args
+			availableSize := int64(file.Size) - int64(len(kargsConfig.Default))
+
+			return appendOffset, availableSize, nil
 		}
 	}
 	return 0, 0, fmt.Errorf("file %s not found in kargs config", filePath)
