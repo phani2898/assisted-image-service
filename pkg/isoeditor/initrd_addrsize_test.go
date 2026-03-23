@@ -24,7 +24,7 @@ var _ = Describe("NewInitrdAddrsizeReader", func() {
 		addrsizePath = filepath.Join(filesDir, "images/initrd.addrsize")
 	})
 	It("Get initrd.addrsize file", func() {
-		streamReader, err := NewInitRamFSStreamReader(initrdPath, &IgnitionContent{ignitionContent})
+		streamReader, err := NewInitRamFSStreamReader(initrdPath, &IgnitionContent{Config: ignitionContent})
 		Expect(err).NotTo(HaveOccurred())
 
 		addrsizeFile, err := NewInitrdAddrsizeReader(addrsizePath, streamReader)
